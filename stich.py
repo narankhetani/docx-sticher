@@ -100,25 +100,6 @@ class MainWindow(BoxLayout):
         okayButton.bind(on_press=self.pop_up.dismiss)
         self.pop_up.open()
 
-
-        # self.box=FloatLayout()
-        
-    #     self.lab=(Label(text="this is a pop exampleby vitriol ",font_size=15, size_hint=(None,None),pos_hint={'x':.25,'y':.6}))
-        # self.but=(Button(text="close",size_hint=(None,None),
-        # 	width=200,height=50,pos_hint={'x':0,'y':0}))
-        # self.box.add_widget(self.but)
-        
-        # self.box.add_widget(Button(text="blank",size_hint=(None,None),
-        # 	width=200,height=50,pos_hint={'x':.5,'y':0}))
-       
-        # self.main_pop = Popup(title="my_pop",content=self.box,
-        # 	size_hint=(None,None),size=(450,300),auto_dismiss=False,title_size=15)
-        	
-        # self.but.bind(on_press=self.main_pop.dismiss)
-        
-        # self.main_pop.open()
-
-
     def stich(self, *args):
         selectedPath = self.fichoo.path
         filesToBeStiched = []
