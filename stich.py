@@ -117,6 +117,7 @@ class MainWindow(BoxLayout):
                             number = filename.split("_").pop().split(".")[0].lstrip('0')
                             filesToBeStiched.append({"number":number, "filename": filename})
                         except Exception as e:
+                            filesToBeStiched.append({"number":0, "filename": filename})
                             print("wasnt able to get number for: "+filename+str(e))
 
             orderedFiles = sorted(filesToBeStiched, key=lambda k: int(k['number']))
