@@ -11,6 +11,8 @@ from docx import Document
 from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 from kivy.uix.floatlayout import FloatLayout 
+from kivy.core.window import Window
+from pdb import set_trace as bp
 
 from os.path import expanduser
 import os.path
@@ -63,15 +65,14 @@ class StichMessagePopup(Popup):
     def __init__(self, parent_inst, *args,  **kwargs):
         super(StichMessagePopup, self).__init__(*args, **kwargs)
         self.parent_inst = parent_inst
-
 class MainWindow(BoxLayout):
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
+        Window.bind(on_dropfile=self._on_file_drop)
         self.orientation = "vertical"
         self.fichoo = FileChooserListView(path=expanduser('~'), filters=['*.docx'])
         self.popup = StichMessagePopup(self)
         btn_stich = Button(text="Stich", on_release=self.popup.open, size_hint_y=0.1)
-
         self.add_widget(self.fichoo)
         self.add_widget(btn_stich)
 
@@ -100,11 +101,8 @@ class MainWindow(BoxLayout):
         okayButton.bind(on_press=self.pop_up.dismiss)
         self.pop_up.open()
 
-    def stich(self, *args):
-        selectedPath = self.fichoo.path
+    def stichFiles(self, selectedPath):
         filesToBeStiched = []
-        content = Button(text='Close me!')
-
         if os.path.isfile(f"{selectedPath}/merged.docx"):
             self.show_popup('Merge Failed','Merged file already exists, please delete')
             return
@@ -129,8 +127,14 @@ class MainWindow(BoxLayout):
             self.show_popup('Merge Failed',f"Reason: {str(oe)}")
             return
 
-        self.fichoo._update_files()
+    def _on_file_drop(self, window, file_path):
+        self.stichFiles(str(file_path.decode("utf-8")))
+        return
 
+    def stich(self, *args):
+        selectedPath = self.fichoo.path
+        self.stichFiles(selectedPath)
+        self.fichoo._update_files()
 
 class SticherApp(App):
     def build(self):
