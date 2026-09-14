@@ -11,15 +11,33 @@ Merge many Word (`.docx`) files into one, in the right order. Use the desktop ap
   output file back into itself.
 - **Finds duplicates**: files like `part_3 (1).docx` or `part_3 - Copy.docx` are flagged, so you can leave them out.
 
-## Install
+## Install on Windows
 
-You need [uv](https://docs.astral.sh/uv/getting-started/installation/):
+1. Press the **Start** button, type `PowerShell` and open it.
+2. Paste this line and press **Enter**:
+
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/narankhetani/docx-sticher/main/install.ps1 | iex"
+   ```
+
+That's it. The app opens when setup finishes. After that you can start it from:
+
+- the **Start Menu** or the **Desktop** shortcut, or
+- by right-clicking a folder of `.docx` files and choosing **Send to > DOCX Stitcher**.
+
+No admin rights or git needed. Python is downloaded automatically by [uv](https://docs.astral.sh/uv/).
+To **update**, run the same line again. To **uninstall**:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/narankhetani/docx-sticher/main/uninstall.ps1 | iex"
+```
+
+## Install on macOS / Linux
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```sh
-# macOS / Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
-# Windows (PowerShell)
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 Then either run it straight from GitHub with nothing to install:

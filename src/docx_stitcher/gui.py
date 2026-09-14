@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import queue
 import subprocess
@@ -440,7 +441,20 @@ class StitcherApp:
         self.status.config(text=text)
 
 
+def _prepare_windows() -> None:
+    """Crisp text on high-DPI screens and our own taskbar icon instead of Python's."""
+    import ctypes
+
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DocxStitcher")
+    except (AttributeError, OSError):
+        pass
+
+
 def run(initial: Sequence[Path] = ()) -> int:
+    if sys.platform == "win32":
+        _prepare_windows()
     dnd = TkinterDnD is not None
     try:
         root = TkinterDnD.Tk() if dnd else tk.Tk()
@@ -448,13 +462,19 @@ def run(initial: Sequence[Path] = ()) -> int:
         if dnd and "tkdnd" in str(exc).lower():
             dnd, root = False, tk.Tk()
         else:
-            print(
+            message = (
                 f"Couldn't start the desktop app: {exc}\n"
                 "Try `uv python upgrade` (older uv Python builds can't find Tcl/Tk),\n"
-                "or use the command line: docx-stitcher --help",
-                file=sys.stderr,
+                "or use the command line: docx-stitcher --help"
             )
+            print(message, file=sys.stderr)
+            if sys.platform == "win32":  # launched from a shortcut there is no console to print to
+                import ctypes
+
+                ctypes.windll.user32.MessageBoxW(None, message, "DOCX Stitcher", 0x10)
             return 1
+    with contextlib.suppress(tk.TclError):
+        root.iconphoto(True, tk.PhotoImage(file=str(Path(__file__).with_name("assets") / "icon.png")))
     StitcherApp(root, initial, dnd=dnd)
     root.lift()
     root.mainloop()
