@@ -43,13 +43,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Then either run it straight from GitHub with nothing to install:
 
 ```sh
-uvx --from git+https://github.com/narankhetani/docx-sticher docx-stitcher
+uvx --from https://github.com/narankhetani/docx-sticher/archive/refs/heads/main.zip docx-stitcher
 ```
 
 or install it once, so `docx-stitcher` is always on your PATH:
 
 ```sh
-uv tool install git+https://github.com/narankhetani/docx-sticher
+uv tool install https://github.com/narankhetani/docx-sticher/archive/refs/heads/main.zip
 ```
 
 ## Desktop app
