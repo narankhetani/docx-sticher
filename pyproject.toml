@@ -1,0 +1,51 @@
+[project]
+name = "docx-stitcher"
+version = "2.0.0"
+description = "Merge many Word (.docx) files into one, in the right order - desktop app and CLI."
+readme = "README.md"
+authors = [
+    { name = "Naran Khetani", email = "narankhetani@gmail.com" }
+]
+requires-python = ">=3.10"
+keywords = ["docx", "word", "merge", "combine", "concatenate"]
+classifiers = [
+    "Environment :: Console",
+    "Environment :: X11 Applications",
+    "Environment :: MacOS X",
+    "Environment :: Win32 (MS Windows)",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business :: Office Suites",
+]
+dependencies = [
+    "docxcompose>=2.2.0",
+    "python-docx>=1.2.0",
+    "tkinterdnd2>=0.6.3",
+]
+
+[project.urls]
+Repository = "https://github.com/narankhetani/docx-sticher"
+
+[project.scripts]
+docx-stitcher = "docx_stitcher:main"
+
+[project.gui-scripts]
+docx-stitcher-app = "docx_stitcher.gui:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
