@@ -179,6 +179,78 @@ def _open(path: Path):
         raise StitchError(f"Could not read {path.name}: {exc}") from exc
 
 
+def _fast_composer(master):
+    """A docxcompose Composer that stays fast when merging hundreds of documents.
+
+    The stock ``Composer.insert`` handles every top-level body element on its own:
+    it re-lists all styles, runs a dozen XPath queries and inserts by index into an
+    ever-growing body, then renumbers ids across the whole merged body after every
+    document. That makes a 700-page merge take minutes. This subclass runs the
+    order-independent steps once per document, keeps the per-element numbering
+    steps (list restarts depend on element order), and renumbers ids once on save.
+    """
+    from copy import deepcopy
+
+    from docx.oxml import OxmlElement
+    from docx.oxml.section import CT_SectPr
+    from docxcompose.composer import Composer
+    from docxcompose.properties import CustomProperties
+
+    class FastComposer(Composer):
+        def insert(self, index, doc, remove_property_fields=True):
+            self.reset_reference_mapping()
+            self._current_preserved_styles = {}
+
+            if remove_property_fields:
+                cprops = CustomProperties(doc)
+                for name in cprops.keys():  # noqa: SIM118 - not a dict, has no __iter__
+                    cprops.dissolve_fields(name)
+
+            self._create_style_id_mapping(doc)
+            self.retain_formatting_from_default_styles(doc)
+
+            # Every step below searches descendants (".//"), so running it on a wrapper
+            # holding the whole body does the same work as once per element.
+            batch = OxmlElement("w:body")
+            for element in doc.element.body:
+                if not isinstance(element, CT_SectPr):
+                    batch.append(deepcopy(element))
+            self.add_referenced_parts(doc.part, self.doc.part, batch)
+            self.add_styles(doc, batch)
+            self.add_images(doc, batch)
+            self.add_diagrams(doc, batch)
+            self.add_shapes(doc, batch)
+            self.add_footnotes(doc, batch)
+            self.remove_header_and_footer_references(doc, batch)
+
+            body = self.doc.element.body
+            anchor = body[index] if index < len(body) else None
+            elements = list(batch)
+            for element in elements:
+                if anchor is None:
+                    body.append(element)
+                else:
+                    anchor.addprevious(element)
+            for element in elements:
+                self.add_numberings(doc, element)
+                self.restart_first_numbering(doc, element)
+
+            self.add_styles_from_other_parts(doc)
+            # Both are no-ops for single-section documents, but count the merged
+            # body's sections first, which gets slower with every document added.
+            if len(doc.sections) > 1:
+                self.fix_section_types(doc)
+                self.fix_header_and_footers(doc)
+
+        def save(self, filename):
+            Composer.renumber_bookmarks(self)
+            Composer.renumber_docpr_ids(self)
+            Composer.renumber_nvpicpr_ids(self)
+            super().save(filename)
+
+    return FastComposer(master)
+
+
 def stitch(
     files: Sequence[Path | str],
     output: Path | str,
@@ -191,8 +263,6 @@ def stitch(
 
     Uses docxcompose, so images, styles, numbering, footnotes and tables survive the merge.
     """
-    from docxcompose.composer import Composer
-
     files = [Path(f) for f in files]
     output = Path(output)
     if not files:
@@ -208,7 +278,7 @@ def stitch(
     if on_progress:
         on_progress(0, total, files[0])
     master = _open(files[0])
-    composer = Composer(master)
+    composer = _fast_composer(master)
     for index, path in enumerate(files[1:], start=1):
         if on_progress:
             on_progress(index, total, path)

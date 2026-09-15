@@ -1,10 +1,13 @@
 import os
+import re
 import struct
+import zipfile
 import zlib
 from pathlib import Path
 
 import pytest
 from docx import Document
+from docx.enum.section import WD_SECTION
 from docx.enum.text import WD_BREAK
 from docx.shared import Inches
 
@@ -168,6 +171,44 @@ def test_stitch_keeps_images(tmp_path: Path):
     assert len(doc.inline_shapes) == 2
     image_parts = [r for r in doc.part.rels.values() if "image" in r.reltype]
     assert image_parts, "images must be carried into the merged package"
+
+
+def rich_doc(path: Path, n: int, image: Path) -> Path:
+    doc = Document()
+    doc.sections[0].header.paragraphs[0].text = f"Header {n}"
+    doc.add_heading(f"Chapter {n}", 1)
+    for style in ["List Number", "List Number", "List Bullet", "Intense Quote"]:
+        doc.add_paragraph(f"{style} {n}", style=style)
+    doc.add_table(rows=2, cols=2, style="Light Grid Accent 1").cell(0, 0).text = "cell"
+    doc.add_picture(str(image), width=Inches(1))
+    if n % 2:
+        doc.add_section(WD_SECTION.NEW_PAGE)
+        doc.sections[-1].footer.paragraphs[0].text = f"Footer {n}"
+        doc.add_paragraph("second section")
+    doc.save(str(path))
+    return path
+
+
+def test_fast_composer_matches_docxcompose(tmp_path: Path):
+    from docxcompose.composer import Composer
+
+    from docx_stitcher.core import _fast_composer
+
+    png = tiny_png(tmp_path / "dot.png")
+    files = [rich_doc(tmp_path / f"d{n}.docx", n, png) for n in range(5)]
+
+    def merge(factory, out: Path) -> dict[str, bytes]:
+        master = Document(str(files[0]))
+        composer = factory(master)
+        for path in files[1:]:
+            master.add_page_break()
+            composer.append(Document(str(path)))
+        composer.save(str(out))
+        with zipfile.ZipFile(out) as z:
+            # list definitions get a random nsid on every merge
+            return {n: re.sub(rb'w:nsid w:val="\w+"', b"", z.read(n)) for n in z.namelist()}
+
+    assert merge(_fast_composer, tmp_path / "fast.docx") == merge(Composer, tmp_path / "stock.docx")
 
 
 def test_stitch_refuses_to_overwrite(chapters: Path):
