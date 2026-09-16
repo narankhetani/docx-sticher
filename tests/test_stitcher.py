@@ -211,6 +211,26 @@ def test_fast_composer_matches_docxcompose(tmp_path: Path):
     assert merge(_fast_composer, tmp_path / "fast.docx") == merge(Composer, tmp_path / "stock.docx")
 
 
+def test_stitch_without_images(tmp_path: Path):
+    png = tiny_png(tmp_path / "dot.png")
+    files = [make_doc(tmp_path / f"{n}.docx", f"text {n}", png) for n in range(3)]
+    out = stitch(files, tmp_path / "merged.docx", keep_images=False)
+
+    doc = Document(str(out))
+    assert len(doc.inline_shapes) == 0
+    assert texts(out) == ["text 0", "text 1", "text 2"]
+    with zipfile.ZipFile(out) as z:
+        assert [n for n in z.namelist() if n.startswith("word/media/")] == []
+
+
+def test_cli_no_images(tmp_path: Path):
+    png = tiny_png(tmp_path / "dot.png")
+    for n in range(2):
+        make_doc(tmp_path / f"{n}.docx", f"text {n}", png)
+    assert main([str(tmp_path), "-q", "--no-images"]) == 0
+    assert len(Document(str(tmp_path / "merged.docx")).inline_shapes) == 0
+
+
 def test_stitch_refuses_to_overwrite(chapters: Path):
     out = make_doc(chapters / "merged.docx", "existing")
     with pytest.raises(StitchError, match="already exists"):

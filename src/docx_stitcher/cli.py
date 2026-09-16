@@ -82,6 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-page-breaks", action="store_true", help="don't start each document on a new page"
     )
+    parser.add_argument(
+        "--no-images", action="store_true", help="leave pictures out, for a much smaller merged file"
+    )
     overwrite = parser.add_mutually_exclusive_group()
     overwrite.add_argument(
         "-f", "--force", action="store_true", help="overwrite the output file if it exists"
@@ -149,7 +152,14 @@ def main(argv: list[str] | None = None) -> int:
                 progress_shown = True
                 print(f"\r\033[KMerging {done + 1}/{total}: {path.name}", end="", flush=True)
 
-        stitch(files, output, page_breaks=not args.no_page_breaks, overwrite=True, on_progress=progress)
+        stitch(
+            files,
+            output,
+            page_breaks=not args.no_page_breaks,
+            keep_images=not args.no_images,
+            overwrite=True,
+            on_progress=progress,
+        )
         if progress_shown:
             print("\r\033[K", end="")
         say(f"\nSaved {display(output)}")

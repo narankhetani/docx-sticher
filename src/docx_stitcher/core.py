@@ -179,6 +179,67 @@ def _open(path: Path):
         raise StitchError(f"Could not read {path.name}: {exc}") from exc
 
 
+def _style_id_names(styles) -> list[tuple[str, str | None]]:
+    """``(style_id, UI name)`` per style, without building a Style object for each.
+
+    Iterating ``doc.styles`` the normal way parses each style's type through an enum;
+    docxcompose does that for every document, which costs more than the merge itself.
+    """
+    from docx.styles import BabelFish
+
+    pairs = []
+    for element in styles.element.style_lst:
+        name = element.name_val
+        pairs.append((element.styleId, None if name is None else BabelFish.internal2ui(name)))
+    return pairs
+
+
+class _CachedStyles:
+    """The document's styles, with the id/name listing cached until a style is added."""
+
+    def __init__(self, styles):
+        self._styles = styles
+        self._count = -1
+        self._cached: list = []
+
+    def __iter__(self):
+        from collections import namedtuple
+
+        count = len(self._styles.element.style_lst)
+        if count != self._count:
+            style = namedtuple("style", "style_id name")
+            self._cached = [style(sid, name) for sid, name in _style_id_names(self._styles)]
+            self._count = count
+        return iter(self._cached)
+
+    def __getattr__(self, name):
+        return getattr(self._styles, name)
+
+    def __getitem__(self, key):
+        return self._styles[key]
+
+    def __contains__(self, name):
+        return name in self._styles
+
+    def __len__(self):
+        return len(self._styles)
+
+
+class _DocWithCachedStyles:
+    """The merged document, handing out :class:`_CachedStyles` instead of fresh Styles."""
+
+    def __init__(self, doc):
+        self._doc = doc
+        self._styles = _CachedStyles(doc.styles)
+
+    @property
+    def styles(self):
+        return self._styles
+
+    def __getattr__(self, name):
+        return getattr(self._doc, name)
+
+
 def _fast_composer(master):
     """A docxcompose Composer that stays fast when merging hundreds of documents.
 
@@ -197,6 +258,10 @@ def _fast_composer(master):
     from docxcompose.properties import CustomProperties
 
     class FastComposer(Composer):
+        def _create_style_id_mapping(self, doc):
+            self._style_id2name = dict(_style_id_names(doc.styles))
+            self._style_name2id = {name: sid for sid, name in _style_id_names(self.doc.styles)}
+
         def insert(self, index, doc, remove_property_fields=True):
             self.reset_reference_mapping()
             self._current_preserved_styles = {}
@@ -248,7 +313,31 @@ def _fast_composer(master):
             Composer.renumber_nvpicpr_ids(self)
             super().save(filename)
 
-    return FastComposer(master)
+    return FastComposer(_DocWithCachedStyles(master))
+
+
+def strip_images(doc) -> int:
+    """Remove pictures from a document in place and return how many were removed.
+
+    Drops DrawingML pictures (``w:drawing``), the older VML kind (``w:pict``) and
+    embedded objects (``w:object``). Text, styles, lists and tables are untouched;
+    the runs that held a picture stay behind, empty.
+    """
+    from docx.opc.constants import RELATIONSHIP_TYPE as RT
+
+    removed = 0
+    for element in doc.element.body.xpath(".//w:drawing | .//w:pict | .//w:object"):
+        parent = element.getparent()
+        if parent is not None:
+            parent.remove(element)
+            removed += 1
+    if removed:
+        # Drop the now-unused image relationships, or the picture files would still
+        # be saved into the merged document and keep it large.
+        part = doc.part
+        for rId in [r for r, rel in part.rels.items() if rel.reltype == RT.IMAGE]:
+            part.drop_rel(rId)
+    return removed
 
 
 def stitch(
@@ -256,12 +345,15 @@ def stitch(
     output: Path | str,
     *,
     page_breaks: bool = True,
+    keep_images: bool = True,
     overwrite: bool = False,
     on_progress: ProgressCallback | None = None,
 ) -> Path:
     """Merge *files* in order into *output* and return its path.
 
-    Uses docxcompose, so images, styles, numbering, footnotes and tables survive the merge.
+    Uses docxcompose, so images, styles, numbering, footnotes and tables survive the
+    merge. With ``keep_images=False`` pictures are left out, which makes the merged
+    file much smaller; everything else is merged the same way.
     """
     files = [Path(f) for f in files]
     output = Path(output)
@@ -278,11 +370,15 @@ def stitch(
     if on_progress:
         on_progress(0, total, files[0])
     master = _open(files[0])
+    if not keep_images:
+        strip_images(master)
     composer = _fast_composer(master)
     for index, path in enumerate(files[1:], start=1):
         if on_progress:
             on_progress(index, total, path)
         doc = _open(path)
+        if not keep_images:
+            strip_images(doc)
         if page_breaks:
             master.add_page_break()
         try:

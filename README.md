@@ -85,6 +85,7 @@ docx-stitcher ~/chapters --sort modified --no-page-breaks --rename
 | `-x, --exclude GLOB` | Skip matching file names (can be repeated) |
 | `--skip-copies` | Skip duplicates like `name (1).docx` / `name - Copy.docx` |
 | `--no-page-breaks` | Don't start each document on a new page |
+| `--no-images` | Leave pictures out, for a much smaller merged file |
 | `-f, --force` / `--rename` | Overwrite an existing output file / save as `merged (2).docx` instead |
 | `-n, --dry-run` | List the merge order and exit |
 | `-q, --quiet` | Only print errors |
@@ -96,7 +97,7 @@ docx-stitcher ~/chapters --sort modified --no-page-breaks --rename
 from docx_stitcher import collect_inputs, stitch
 
 files = collect_inputs(["chapters"], skip_copies=True)
-stitch(files, "book.docx", page_breaks=True)
+stitch(files, "book.docx", page_breaks=True, keep_images=True)
 ```
 
 ## Development

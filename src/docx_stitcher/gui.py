@@ -141,6 +141,10 @@ class StitcherApp:
         ttk.Checkbutton(options, text="Start each document on a new page", variable=self.page_breaks).pack(
             anchor="w"
         )
+        self.keep_images = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            options, text="Keep pictures (uncheck for a smaller file)", variable=self.keep_images
+        ).pack(anchor="w")
         save = ttk.Frame(outer)
         save.pack(fill="x", pady=(8, 0))
         ttk.Label(save, text="Save as:").pack(side="left")
@@ -385,16 +389,19 @@ class StitcherApp:
         self.progress.pack(side="right", padx=12)
         self._refresh()
         threading.Thread(
-            target=self._worker, args=(files, output, self.page_breaks.get()), daemon=True
+            target=self._worker,
+            args=(files, output, self.page_breaks.get(), self.keep_images.get()),
+            daemon=True,
         ).start()
         self.root.after(50, self._poll)
 
-    def _worker(self, files: list[Path], output: Path, page_breaks: bool) -> None:
+    def _worker(self, files: list[Path], output: Path, page_breaks: bool, keep_images: bool) -> None:
         try:
             result = stitch(
                 files,
                 output,
                 page_breaks=page_breaks,
+                keep_images=keep_images,
                 overwrite=True,
                 on_progress=lambda done, total, path: self.events.put(("progress", done, total, path)),
             )
