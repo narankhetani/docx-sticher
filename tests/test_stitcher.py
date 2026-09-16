@@ -248,6 +248,72 @@ def test_stitch_reports_corrupt_file(tmp_path: Path):
     assert not (tmp_path / "merged.docx").exists()
 
 
+def test_stitch_reports_truncated_file(tmp_path: Path):
+    """A file copied only part way is caught before merging, not half way through."""
+    good = make_doc(tmp_path / "good.docx", "ok")
+    cut = tmp_path / "cut.docx"
+    cut.write_bytes(make_doc(tmp_path / "whole.docx", "whole").read_bytes()[:400])
+    with pytest.raises(StitchError, match="can't be read"):
+        stitch([good, cut], tmp_path / "merged.docx")
+
+
+def test_stitch_can_skip_unreadable_files(tmp_path: Path):
+    files = [make_doc(tmp_path / f"{n}.docx", f"text {n}") for n in range(3)]
+    cut = tmp_path / "cut.docx"
+    cut.write_bytes(files[0].read_bytes()[:400])
+    skipped = []
+    out = stitch(
+        [files[0], cut, files[1], files[2]],
+        tmp_path / "merged.docx",
+        skip_unreadable=True,
+        on_skip=lambda path, why: skipped.append((path.name, why)),
+    )
+    assert texts(out) == ["text 0", "text 1", "text 2"]
+    assert [name for name, _ in skipped] == ["cut.docx"]
+
+
+def half_writing_composer(monkeypatch, *, raise_after: bool):
+    """Make the merge write a partial file, as it would if it ran out of memory."""
+    from docx_stitcher import core
+
+    real = core._fast_composer
+
+    class Dying:
+        def __init__(self, master):
+            self._composer = real(master)
+
+        def append(self, doc):
+            self._composer.append(doc)
+
+        def save(self, filename):
+            Path(filename).write_bytes(b"PK\x03\x04 half a document")
+            if raise_after:
+                raise MemoryError
+
+    monkeypatch.setattr(core, "_fast_composer", Dying)
+
+
+def test_failed_save_leaves_no_half_written_file(tmp_path: Path, monkeypatch):
+    files = [make_doc(tmp_path / f"{n}.docx", f"text {n}") for n in range(2)]
+    out = make_doc(tmp_path / "merged.docx", "previous merge")
+    half_writing_composer(monkeypatch, raise_after=True)
+
+    with pytest.raises(MemoryError):
+        stitch(files, out, overwrite=True)
+    assert texts(out) == ["previous merge"], "the earlier file must survive untouched"
+    assert list(tmp_path.glob(".*")) == [], "no leftover part file"
+
+
+def test_incomplete_save_is_reported(tmp_path: Path, monkeypatch):
+    files = [make_doc(tmp_path / f"{n}.docx", f"text {n}") for n in range(2)]
+    out = tmp_path / "merged.docx"
+    half_writing_composer(monkeypatch, raise_after=False)
+
+    with pytest.raises(StitchError, match="not written completely"):
+        stitch(files, out)
+    assert not out.exists()
+
+
 def test_progress_callback(chapters: Path):
     seen = []
     stitch(

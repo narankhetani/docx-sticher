@@ -145,6 +145,10 @@ class StitcherApp:
         ttk.Checkbutton(
             options, text="Keep pictures (uncheck for a smaller file)", variable=self.keep_images
         ).pack(anchor="w")
+        self.skip_broken = tk.BooleanVar(value=False)
+        ttk.Checkbutton(options, text="Skip files that can't be read", variable=self.skip_broken).pack(
+            anchor="w"
+        )
         save = ttk.Frame(outer)
         save.pack(fill="x", pady=(8, 0))
         ttk.Label(save, text="Save as:").pack(side="left")
@@ -383,6 +387,7 @@ class StitcherApp:
 
         self.busy = True
         self.last_output = None
+        self.skipped: list[str] = []
         self.open_btn.pack_forget()
         self.show_btn.pack_forget()
         self.progress.config(maximum=len(files), value=0)
@@ -390,20 +395,24 @@ class StitcherApp:
         self._refresh()
         threading.Thread(
             target=self._worker,
-            args=(files, output, self.page_breaks.get(), self.keep_images.get()),
+            args=(files, output, self.page_breaks.get(), self.keep_images.get(), self.skip_broken.get()),
             daemon=True,
         ).start()
         self.root.after(50, self._poll)
 
-    def _worker(self, files: list[Path], output: Path, page_breaks: bool, keep_images: bool) -> None:
+    def _worker(
+        self, files: list[Path], output: Path, page_breaks: bool, keep_images: bool, skip_broken: bool
+    ) -> None:
         try:
             result = stitch(
                 files,
                 output,
                 page_breaks=page_breaks,
                 keep_images=keep_images,
+                skip_unreadable=skip_broken,
                 overwrite=True,
                 on_progress=lambda done, total, path: self.events.put(("progress", done, total, path)),
+                on_skip=lambda path, why: self.events.put(("skipped", path, why)),
             )
             self.events.put(("done", result))
         except StitchError as exc:
@@ -420,6 +429,8 @@ class StitcherApp:
                     self.progress.config(value=done)
                     if done < total:
                         self._set_status(f"Merging {done + 1} of {total}: {path.name}")
+                elif kind == "skipped":
+                    self.skipped.append(data[0].name)
                 else:
                     self._finish(kind, data[0])
                     return
@@ -433,7 +444,19 @@ class StitcherApp:
         self._refresh()
         if kind == "done":
             self.last_output = payload
-            self._set_status(f"Saved {payload.name}")
+            skipped = len(self.skipped)
+            self._set_status(
+                f"Saved {payload.name}" + (f" - skipped {skipped} unreadable file(s)" if skipped else "")
+            )
+            if skipped:
+                names = "\n".join(self.skipped[:10])
+                more = f"\n...and {skipped - 10} more" if skipped > 10 else ""
+                messagebox.showwarning(
+                    "Some files were skipped",
+                    f"{skipped} file(s) could not be read and are NOT in the merged document:\n\n"
+                    f"{names}{more}\n\nThey were probably copied or downloaded only part way.",
+                    parent=self.root,
+                )
             self.show_btn.pack(side="right", padx=(0, 12))
             self.open_btn.pack(side="right", padx=(0, 6))
         else:

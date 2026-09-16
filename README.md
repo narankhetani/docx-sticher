@@ -86,6 +86,7 @@ docx-stitcher ~/chapters --sort modified --no-page-breaks --rename
 | `--skip-copies` | Skip duplicates like `name (1).docx` / `name - Copy.docx` |
 | `--no-page-breaks` | Don't start each document on a new page |
 | `--no-images` | Leave pictures out, for a much smaller merged file |
+| `--skip-broken` | Merge the rest instead of stopping when a file can't be read |
 | `-f, --force` / `--rename` | Overwrite an existing output file / save as `merged (2).docx` instead |
 | `-n, --dry-run` | List the merge order and exit |
 | `-q, --quiet` | Only print errors |

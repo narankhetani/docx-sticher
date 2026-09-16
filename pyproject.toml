@@ -1,6 +1,6 @@
 [project]
 name = "docx-stitcher"
-version = "2.1.0"
+version = "2.1.1"
 description = "Merge many Word (.docx) files into one, in the right order - desktop app and CLI."
 readme = "README.md"
 authors = [

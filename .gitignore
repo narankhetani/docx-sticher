@@ -8,3 +8,7 @@ build/
 *.egg-info/
 ~$*.docx
 .DS_Store
+# local test documents, never committed
+word/
+*.docx
+!tests/**/*.docx

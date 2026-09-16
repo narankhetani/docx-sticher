@@ -6,6 +6,7 @@ This module has no UI code, so the CLI, the GUI and your own scripts can all use
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
@@ -340,14 +341,57 @@ def strip_images(doc) -> int:
     return removed
 
 
+def check_docx(path: Path) -> str | None:
+    """Why *path* can't be merged, or None if it looks like a complete .docx.
+
+    Only reads the zip directory, so checking hundreds of files takes about a second.
+    Catches the common case of a file that was copied or downloaded part way.
+    """
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(path) as package:
+            names = set(package.namelist())
+    except zipfile.BadZipFile:
+        return "not a complete .docx - it looks like it was copied or downloaded only part way"
+    except OSError as exc:
+        return exc.strerror or str(exc)
+    if "word/document.xml" not in names:
+        return "not a Word document (no word/document.xml inside)"
+    return None
+
+
+def _check_saved(path: Path) -> None:
+    """Fail unless *path* is a complete .docx, so a cut-short save is never kept.
+
+    A merge that dies part way through still leaves a file on disk. It looks fine in
+    Explorer but has no zip directory, and Word refuses to open it.
+    """
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(path) as package:
+            names = set(package.namelist())
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise StitchError(
+            f"The merged file was not written completely ({path.stat().st_size / 1e6:.0f} MB so far). "
+            "The merge may have run out of memory or disk space. Nothing was overwritten."
+        ) from exc
+    missing = {"[Content_Types].xml", "word/document.xml"} - names
+    if missing:
+        raise StitchError(f"The merged file is incomplete: {', '.join(sorted(missing))} is missing.")
+
+
 def stitch(
     files: Sequence[Path | str],
     output: Path | str,
     *,
     page_breaks: bool = True,
     keep_images: bool = True,
+    skip_unreadable: bool = False,
     overwrite: bool = False,
     on_progress: ProgressCallback | None = None,
+    on_skip: Callable[[Path, str], None] | None = None,
 ) -> Path:
     """Merge *files* in order into *output* and return its path.
 
@@ -365,6 +409,26 @@ def stitch(
         raise StitchError(f"{output} already exists. Choose another name or allow overwriting.")
     if output.resolve() in {f.resolve() for f in files}:
         raise StitchError(f"The output file {output.name} is also one of the inputs.")
+
+    # Check every file up front: on a folder of hundreds this takes about a second,
+    # instead of failing minutes into the merge.
+    broken = [(f, why) for f in files if (why := check_docx(f)) is not None]
+    if broken and not skip_unreadable:
+        names = ", ".join(f.name for f, _ in broken[:3])
+        more = f" and {len(broken) - 3} more" if len(broken) > 3 else ""
+        raise StitchError(
+            f"{len(broken)} file(s) can't be read: {names}{more}.\n"
+            f"The first one is {broken[0][1]}.\n"
+            "Copy those files again, or skip them and merge the rest."
+        )
+    if broken:
+        unusable = {f for f, _ in broken}
+        files = [f for f in files if f not in unusable]
+        for path, why in broken:
+            if on_skip:
+                on_skip(path, why)
+        if not files:
+            raise StitchError("None of the files could be read.")
 
     total = len(files)
     if on_progress:
@@ -387,10 +451,23 @@ def stitch(
             raise StitchError(f"Could not merge {path.name}: {exc}") from exc
 
     output.parent.mkdir(parents=True, exist_ok=True)
+    # Save beside the output first: if the merge is cut short (out of memory, the app
+    # closed, a full disk, a sync client) a half-written file never lands as the result.
+    # The leading dot keeps the part file out of any later merge of the same folder.
+    part = output.with_name(f".{output.stem}.part-{os.getpid()}{output.suffix}")
     try:
-        composer.save(str(output))
+        composer.save(str(part))
+        _check_saved(part)
+        os.replace(part, output)
     except PermissionError as exc:
+        part.unlink(missing_ok=True)
         raise StitchError(f"Could not save {output}: permission denied (is it open in Word?)") from exc
+    except OSError as exc:
+        part.unlink(missing_ok=True)
+        raise StitchError(f"Could not save {output}: {exc.strerror or exc}") from exc
+    except BaseException:  # MemoryError, KeyboardInterrupt, anything else mid-save
+        part.unlink(missing_ok=True)
+        raise
     if on_progress:
         on_progress(total, total, output)
     return output
